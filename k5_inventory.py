@@ -1,16 +1,23 @@
 #!/usr/bin/env python
+"""Dynamic Inventory for Fujitsu K5"""
+
+# pylint: disable=W0621
+# pylint: disable-msg=C0103
+# pylint: disable-msg=W0603
 
 
-import requests
 import os
-import json
-import yaml
-
 import argparse
 import sys
 
 import pprint
-import time
+
+import json
+import yaml
+
+import requests
+
+
 
 OS_AUTH = {
     "OS_USERNAME": "",
@@ -25,23 +32,24 @@ OS_AUTH = {
 }
 
 default_json = {
-        "_meta": {
-            "hostvars": {}
-        },
-    }
+    "_meta": {
+        "hostvars": {}
+    },
+}
 
 
 def get_regional_token():
+    """Get a K5 regional token"""
     session = requests.Session()
     headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
     os_user_domain = OS_AUTH['OS_USER_DOMAIN_NAME']
     os_username = OS_AUTH['OS_USERNAME']
     os_password = OS_AUTH['OS_PASSWORD']
-    # In the V3 identity API a project_name is only unique within a domain 
+    # In the V3 identity API a project_name is only unique within a domain
     # so you must also provide either a project_domain_id or project_domain_name.
     os_project_id = OS_AUTH['OS_PROJECT_ID']
-    os_auth_url = OS_AUTH['OS_AUTH_URL'] 
-    
+    os_auth_url = OS_AUTH['OS_AUTH_URL']
+
     if os_project_id == "":
         print "OS_PROJECT_ID must be defined"
         sys.exit(1)
@@ -52,25 +60,25 @@ def get_regional_token():
 
     url = os_auth_url + '/auth/tokens'
     query_json = {'auth': {
-                            'identity': {
-                                'methods': ['password'],
-                                'password': {
-                                    'user': {
-                                        'domain': {
-                                            'name': os_user_domain
-                                        },
-                                        'name': os_username,
-                                        'password': os_password
-                                    }
-                                }
-                            },
-                            "scope": {
-                                "project": {
-                                    "id": os_project_id
-                                }
-                            }
-                       }
-                    }
+        'identity': {
+            'methods': ['password'],
+            'password': {
+                'user': {
+                    'domain': {
+                        'name': os_user_domain
+                    },
+                    'name': os_username,
+                    'password': os_password
+                }
+            }
+        },
+        "scope": {
+            "project": {
+                "id": os_project_id
+            }
+        }
+    }
+                 }
     try:
         response = session.request('POST', url, headers=headers, json=query_json)
     except requests.exceptions.RequestException as e:
@@ -115,9 +123,9 @@ def create_config_from_config(config_file):
         try:
             config = yaml.load(stream)
         except yaml.YAMLError as exc:
-            print(exc)
+            print exc
             sys.exit(1)
-    auth =config['clouds']['devstack']['auth']
+    auth = config['clouds']['devstack']['auth']
     OS_AUTH['OS_AUTH_URL'] = auth['auth_url']
     OS_AUTH['OS_USER_DOMAIN_NAME'] = auth['domain_name']
     OS_AUTH['OS_PROJECT_DOMAIN_NAME'] = auth['domain_name']
@@ -129,18 +137,22 @@ def create_config_from_config(config_file):
     #OS_AUTH['OS_REGION_NAME'] = auth['']               # not available from AWX
 
 def create_config_from_args():
+    """create config from args"""
     global OS_AUTH
-    for arg in OS_AUTH.keys():
+    for arg in OS_AUTH.iterkeys():
         value = os.environ.get(arg, None)
-        # overwrite OS_AUTH     
-        if value != None:   
+        # overwrite OS_AUTH
+        if value != None:
             OS_AUTH[arg] = value
 
 def get_k5_server_details(token, url, name=None):
-    if name == None:
-        name='' # blank addition to the url
+    """get k5 server details"""
+    if name is None:
+        name = '' # blank addition to the url
     session = requests.Session()
-    headers = {'Content-Type': 'application/json', 'Accept': 'application/json', 'X-Auth-Token': token }
+    headers = {'Content-Type': 'application/json',
+               'Accept': 'application/json',
+               'X-Auth-Token': token}
     url = url + '/servers/detail' + name
     try:
         response = session.request('GET', url, headers=headers)
@@ -155,8 +167,11 @@ def get_k5_server_details(token, url, name=None):
     return resp
 
 def get_k5_image_details(token, url):
+    """get k5 image details"""
     session = requests.Session()
-    headers = {'Content-Type': 'application/json', 'Accept': 'application/json', 'X-Auth-Token': token }
+    headers = {'Content-Type': 'application/json',
+               'Accept': 'application/json',
+               'X-Auth-Token': token}
     url = url + '/images/detail'
     try:
         response = session.request('GET', url, headers=headers)
@@ -171,8 +186,11 @@ def get_k5_image_details(token, url):
     return resp
 
 def get_k5_flavor_details(token, url):
+    """get k5 flavor details"""
     session = requests.Session()
-    headers = {'Content-Type': 'application/json', 'Accept': 'application/json', 'X-Auth-Token': token }
+    headers = {'Content-Type': 'application/json',
+               'Accept': 'application/json',
+               'X-Auth-Token': token}
     url = url + '/flavors/detail'
     try:
         response = session.request('GET', url, headers=headers)
@@ -186,40 +204,36 @@ def get_k5_flavor_details(token, url):
     resp = response.json()['flavors']
     return resp
 
-def generate_hostvars(servers, flavors, images, internal_ips=False):
-   
+def generate_hostvars(servers, flavors, images, show_internal_ips=False):
+    """generate the hostvars"""
     for server in servers:
-
-        server_name = server['name']       
- 
+        server_name = server['name']
         hostvars = default_json['_meta']['hostvars']
-
         hostvars[server_name] = server
 
         # get flavor name
         flavor_id = server['flavor']['id']
-        flavor = next(( x for x in flavors if x['id'] == flavor_id), None)
-        if flavor == None:
+        flavor = next((x for x in flavors if x['id'] == flavor_id), None)
+        if flavor is None:
             flavor_name = "None"
         else:
             flavor_name = flavor['name']
         hostvars[server_name]['k5_flavor'] = flavor_name
-        
         # get image name
         try:
             image_id = server['image']['id']
-            image = next(( x for x in images if x['id'] == image_id), None)
-            if image == None:
+            image = next((x for x in images if x['id'] == image_id), None)
+            if image is None:
                 image_name = "None"
             else:
                 image_name = image['name']
-        except:
+        except Exception:   # TODO need Pete to define the Exception he found here
             image_name = "None"
         hostvars[server_name]['k5_image'] = image_name
 
         # get external / floating IP as ansible_ssh_host
         #
-        # this may croak if you have dual-homed NICs etc, or at least overwrite the IP you want 
+        # this may croak if you have dual-homed NICs etc, or at least overwrite the IP you want
         ansible_ssh_host = ""
         addresses = server['addresses']
         floating = ""
@@ -231,7 +245,7 @@ def generate_hostvars(servers, flavors, images, internal_ips=False):
                 else:
                     fixed = addr['addr']
 
-        if internal_ips:
+        if show_internal_ips:
             ansible_ssh_host = fixed
         else:
             # we try and use the internet public IPs
@@ -239,7 +253,7 @@ def generate_hostvars(servers, flavors, images, internal_ips=False):
                 ansible_ssh_host = floating
             else:
                 ansible_ssh_host = fixed  # openstack dynamic inventory does not do this
-            
+
         hostvars[server_name]['ansible_ssh_host'] = ansible_ssh_host
 
         # add to group
@@ -261,29 +275,29 @@ def generate_hostvars(servers, flavors, images, internal_ips=False):
         image_name = 'image_' + image_name # defined above
         if image_name not in groups:
             groups[image_name] = []
-        groups[image_name].append(server_name) 
+        groups[image_name].append(server_name)
 
         # hypervisor host
         hyp = 'hypervisor_hostname_' + server['OS-EXT-SRV-ATTR:hypervisor_hostname']
         if hyp not in groups:
             groups[hyp] = []
         groups[hyp].append(server_name)
-        
+
         # keyname
-        kn = 'keyname_' + server['key_name'] 
+        kn = 'keyname_' + server['key_name']
         if kn not in groups:
             groups[kn] = []
-        groups[kn].append(server_name) 
+        groups[kn].append(server_name)
 
         # vm status
-        status = 'status_' + server['status'] 
+        status = 'status_' + server['status']
         if status not in groups:
             groups[status] = []
-        groups[status].append(server_name) 
+        groups[status].append(server_name)
 
         # security groups
         for sg in server['security_groups']:
-            sg_name='sg_' + sg['name']
+            sg_name = 'sg_' + sg['name']
             if sg_name not in groups:
                 groups[sg_name] = []
             groups[sg_name].append(server_name)
@@ -291,15 +305,15 @@ def generate_hostvars(servers, flavors, images, internal_ips=False):
         # metadata - does 'groups' exist as a list
         if 'groups' in server['metadata'].keys():
             grps = server['metadata']['groups']
-            if type(grps) is list:
+            if isinstance(grps, list):
                 for g_name in grps:
                     if g_name not in groups:
                         groups[g_name] = []
                     groups[g_name].append(server_name)
 
         for md in server['metadata']:
-            md_name='md_'+md # k only
-            val=md_name+'_'+server['metadata'][md] # k,v
+            md_name = 'md_' + md # k only
+            val = md_name + '_' + server['metadata'][md] # k,v
             if md_name not in groups:
                 groups[md_name] = []
             groups[md_name].append(server_name)
@@ -313,8 +327,8 @@ def generate_hostvars(servers, flavors, images, internal_ips=False):
 
     #pp.pprint( default_json )
 
-def list_servers(name=None,internal_ips=False):
-
+def list_servers(name=None, internal_ips=False):
+    """list servers"""
     # read in the os config file if available
     OS_CLIENT_CONFIG_FILE = os.environ.get('OS_CLIENT_CONFIG_FILE', None)
     if OS_CLIENT_CONFIG_FILE != None:
@@ -328,7 +342,7 @@ def list_servers(name=None,internal_ips=False):
     token, endpoints = get_regional_token()
 
     # get compute endpoint url
-    compute_ep = next(( x for x in endpoints if x['name'] == 'compute'), None)
+    compute_ep = next((x for x in endpoints if x['name'] == 'compute'), None)
     #pp.pprint(compute_ep)
     compute_url = compute_ep['endpoints'][0]['url']
 
@@ -336,13 +350,13 @@ def list_servers(name=None,internal_ips=False):
     servers = get_k5_server_details(token, compute_url, name)
     #pp.pprint(servers)
 
-    if len(servers) >0:
+    if servers:
         flavors = get_k5_flavor_details(token, compute_url)
         #pp.pprint(flavors)
         images = get_k5_image_details(token, compute_url)
         #pp.pprint(images)
 
-    generate_hostvars(servers, flavors, images,internal_ips)
+    generate_hostvars(servers, flavors, images, internal_ips)
 
 
 
@@ -351,7 +365,7 @@ if __name__ == "__main__":
     pp = pprint.PrettyPrinter(indent=2)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--list', action="store_true") # make list a variable and give it a boolean True
+    parser.add_argument('--list', action="store_true") # make list a var and give it a boolean True
     parser.add_argument('--host', type=str)
     args = parser.parse_args()
 
@@ -363,5 +377,4 @@ if __name__ == "__main__":
 
     if args.host:
         url_args = '?name=' + str(args.host)
-        list_servers(internal_ips=internal_ips,name=url_args)
-
+        list_servers(internal_ips=internal_ips, name=url_args)
